@@ -12,3 +12,6 @@ CVS
 .svn
 Hills.xcodeproj/project.xcworkspace/xcuserdata
 Hills.xcodeproj/xcuserdata
+
+# Build tree for the tests workflow in .github/workflows/
+.ci-build/
