@@ -50,3 +50,79 @@ jobs:
           done
           xcrun clang++ "$OUT"/*.o -framework Foundation -framework OpenGL -o "$OUT/tests"
           "$OUT/tests"
+
+      # The suite above compiles Camera.m plus the drivers and never opens the
+      # Xcode project, so until this step existed a completely broken Release
+      # build stayed green. That is not hypothetical: every target once failed on
+      # the removed libarclite, and hills failed again underneath that on a
+      # missing AGL framework. Both went unnoticed through the whole of phase 1,
+      # because nothing in CI had ever built a screen saver.
+      #
+      # hills is the repo where this matters most. Its testable scope is one
+      # file, so the clang suite above covers 191 of 2849 lines of Objective-C --
+      # everything else reaches CI only through this step.
+      #
+      # Both targets, because they have separate signing settings and only the
+      # app carries ENABLE_HARDENED_RUNTIME. Both configurations too: Debug
+      # carries the same signing keys and is the first build a new contributor
+      # runs, and restoring its pre-change values reproduces a hard failure that
+      # a Release-only step could not see.
+      #
+      # Deliberately passes no signing overrides: a runner has no certificate, so
+      # a green run here is the evidence that the committed settings build for
+      # someone who is not the author.
+      #
+      # Building is not enough on its own, which review caught: the distinction
+      # this project argues for -- explicit "-" seals the bundle, an emptied key
+      # yields an unsealed linker-signed one -- produces ** BUILD SUCCEEDED **
+      # either way. Only the signature tells them apart, so assert it.
+      - name: Build and verify both savers
+        run: |
+          set -euo pipefail
+
+          # A team ID in the project file, in either spelling. DEVELOPMENT_TEAM is
+          # the build setting; DevelopmentTeam is what Xcode writes under
+          # TargetAttributes, and hyperspace shipped one there that a grep for the
+          # first spelling missed entirely. hills has no TargetAttributes block
+          # today; this is here so that stays true. Only "" is permitted.
+          #
+          # This lives here as well as in the superproject's commit hook because
+          # the two catch different things: the hook sees commits made through
+          # that harness, CI sees whatever actually arrives on a branch.
+          if grep -nE '(DEVELOPMENT_TEAM|DevelopmentTeam)[[:space:]]*=' \
+               Hills.xcodeproj/project.pbxproj | grep -vE '=[[:space:]]*"";'; then
+            echo "::error::project.pbxproj carries a non-empty development team (shown above)"
+            exit 1
+          fi
+
+          verify() {
+            echo "verifying $1"
+            codesign --verify --strict --verbose=4 "$1"
+            codesign -dv "$1" 2>&1 | grep -q "^Sealed Resources" || {
+              echo "::error::$1 has no sealed resources -- signing regressed to linker-signed"
+              exit 1
+            }
+          }
+
+          # Every combination is attempted before the step fails. Under a bare
+          # set -e the first failing target would skip the second, which defeats
+          # the reason this builds both -- one run should report everything that
+          # is broken, not the first thing.
+          failed=""
+          for target in "Hills Screensaver" "Hills Application"; do
+            for configuration in Release Debug; do
+              if ! xcodebuild -project Hills.xcodeproj -target "$target" \
+                     -configuration "$configuration" build; then
+                failed="$failed\n  $target / $configuration"
+              fi
+            done
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::build failed for:$(printf "$failed")"
+            exit 1
+          fi
+
+          for configuration in Release Debug; do
+            verify "build/$configuration/Hills.saver"
+            verify "build/$configuration/Hills.app"
+          done
