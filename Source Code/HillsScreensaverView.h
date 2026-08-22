@@ -45,6 +45,8 @@
 	IBOutlet id mGridSizeTextField;
 }
 
+- (BOOL) isOnMainDisplay;
+- (BOOL) shouldDraw;
 - (BOOL) hasConfigureSheet;
 - (NSWindow*) configureSheet;
 - (IBAction)closeSheet:(id)sender;

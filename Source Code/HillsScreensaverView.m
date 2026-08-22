@@ -83,18 +83,67 @@
     return self;
 }
 
+// Whether this view is on the display the user means by "main display".
+//
+// The obvious spelling, [[self window] screen] != [NSScreen mainScreen], is
+// wrong twice over, and it is what made the saver draw nothing at all.
+//
+// -[NSScreen mainScreen] is not the main display. It is the screen containing
+// the window with keyboard focus, so it moves as the user changes focus and it
+// is meaningless in a process that has no key window -- which is the situation
+// inside legacyScreenSaver.appex, where the saver is now hosted out of process.
+// Measured on a two-display Mac: CGMainDisplayID() was 1 while mainScreen was
+// display 2, so the test failed even for a view on the actual main display.
+//
+// NSScreen instances are also not pointer-stable -- AppKit vends distinct
+// objects describing the same display -- so == is the wrong comparison even
+// when the display is right.
+//
+// Comparing NSScreenNumber against CGMainDisplayID() asks the question the
+// preference actually means: is this the display with the menu bar.
+- (BOOL)isOnMainDisplay
+{
+	NSScreen *screen = [[self window] screen];
+
+	// Not in a window yet, so the question cannot be answered. Draw: a saver
+	// that renders on one display too many is a smaller failure than one that
+	// renders nowhere, and this is reached every time the host builds the view
+	// before placing it.
+	if (screen == nil)
+		return YES;
+
+	NSNumber *displayID = [screen deviceDescription][@"NSScreenNumber"];
+	return displayID != nil && [displayID unsignedIntValue] == CGMainDisplayID();
+}
+
+- (BOOL)shouldDraw
+{
+	// The preview is always drawn, whatever the preference says.
+	//
+	// "Main display only" is about where the saver runs when it takes over the
+	// screen. It was never meant to describe the thumbnail in System Settings,
+	// and applying it there produces the worst possible reading: a user whose
+	// Settings window happens to be on a second display sees a black rectangle
+	// and concludes the saver is broken. Which is exactly how ss-hx9 was
+	// reported -- and moving the window to the primary display made it render,
+	// which is what identified the mechanism.
+	if ([self isPreview])
+		return YES;
+
+	return !mMainDisplayOnly || [self isOnMainDisplay];
+}
+
 - (void)startAnimation
 {
-	if ( mMainDisplayOnly && 
-		([[self window] screen] != [NSScreen mainScreen]) )
-	{
-		[glView setRender:false];
-	}
-	else
-	{
-		[glView setRender:true];
-		[super startAnimation];
-	}
+	[glView setRender:[self shouldDraw]];
+
+	// Always start the timer, even when this display will not be drawn on.
+	// It used to be started only in the drawing case, which left start and
+	// stop asymmetric -- stopAnimation calls super unconditionally -- and left
+	// the decision frozen at whatever was true before the view had a window.
+	// animateOneFrame re-asks every frame, so the saver now recovers if the
+	// answer changes.
+	[super startAnimation];
 }
 
 - (void)stopAnimation
@@ -120,16 +169,16 @@
 
 - (void)animateOneFrame
 {
-	if (mMainDisplayOnly)
-	{
-		if([[self window] screen] == [NSScreen mainScreen])        
-			[glView setNeedsDisplay:YES];
-	}
-	else
-	{
+	// Re-asked every frame rather than trusted from startAnimation, so the
+	// saver corrects itself once the view has a window and if the main display
+	// changes underneath it. This carried the same broken screen comparison as
+	// startAnimation did, so fixing only one of them would have left the view
+	// enabled but never marked dirty.
+	bool draw = [self shouldDraw];
+
+	[glView setRender:draw];
+	if (draw)
 		[glView setNeedsDisplay:YES];
-	}
-	
 }
 
 - (BOOL)hasConfigureSheet
