@@ -50,3 +50,25 @@ jobs:
           done
           xcrun clang++ "$OUT"/*.o -framework Foundation -framework OpenGL -o "$OUT/tests"
           "$OUT/tests"
+
+      # The suite above compiles Camera.m plus the drivers and never opens the
+      # Xcode project, so until this step existed a completely broken Release
+      # build stayed green. That is not hypothetical: every target once failed on
+      # the removed libarclite, and hills failed again underneath that on a
+      # missing AGL framework. Both went unnoticed through the whole of phase 1,
+      # because nothing in CI had ever built a screen saver.
+      #
+      # hills is the repo where this matters most. Its testable scope is one
+      # file, so the clang suite above covers 191 of 2849 lines of Objective-C --
+      # everything else reaches CI only through this step.
+      #
+      # Both targets, because they have separate signing settings and only the
+      # app carries ENABLE_HARDENED_RUNTIME. Deliberately passes no signing
+      # overrides: a runner has no certificate, so a green run here is the
+      # evidence that the committed settings build for someone who is not the
+      # author.
+      - name: Build the Release targets
+        run: |
+          set -euo pipefail
+          xcodebuild -project Hills.xcodeproj -target "Hills Screensaver" -configuration Release build
+          xcodebuild -project Hills.xcodeproj -target "Hills Application" -configuration Release build
