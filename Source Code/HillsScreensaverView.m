@@ -135,6 +135,23 @@
 	if (window == nil)
 		return YES;
 
+	// Ask the screen first when it will answer. It is authoritative, and the
+	// origin test below is only a proxy for it: the proxy assumes the host pins
+	// a full-screen saver window to its display's origin, which is true of this
+	// host but is not a property of AppKit. Any host that placed the view in a
+	// window somewhere else would get a black screen from the proxy alone --
+	// the failure this whole branch exists to fix.
+	//
+	// Review of this branch pointed out that the previous version discarded
+	// this even though the same comment called it authoritative when non-nil.
+	NSScreen *screen = [window screen];
+	if (screen != nil)
+	{
+		NSNumber *displayID = [screen deviceDescription][@"NSScreenNumber"];
+		if (displayID != nil)
+			return [displayID unsignedIntValue] == CGMainDisplayID();
+	}
+
 	return NSEqualPoints([window frame].origin, NSZeroPoint);
 }
 
@@ -205,7 +222,25 @@
 	[super viewDidMoveToWindow];
 	if (@available(macOS 12.0, *))	// on Monterey and later, update the time interval for the window's screen's refresh rate
 	{
-		self.animationTimeInterval = self.window.screen.maximumRefreshInterval;
+		// Only when the screen actually answers. -[NSWindow screen] is nil for
+		// most of this saver's windows inside legacyScreenSaver.appex -- 25
+		// samples in 32 -- and messaging nil returns 0.0, which is not "use the
+		// default", it is a zero-second timer. Measured on this machine:
+		//
+		//	animationTimeInterval 0        9962 frames in one second
+		//	animationTimeInterval 1.0/60     61 frames in one second
+		//
+		// So the unguarded version burns a core per display, and on a display
+		// that is drawing it also calls -setNeedsDisplay: ten thousand times a
+		// second. Found by review of this branch, which is the only reason it
+		// is not shipping: an earlier note here dismissed the same risk as
+		// "shared with the twins, evidently not fatal" without measuring it.
+		//
+		// helios and hyperspace carry the identical unguarded line and are not
+		// fixed by this. Filed separately rather than reached across repos.
+		NSTimeInterval refresh = self.window.screen.maximumRefreshInterval;
+		if (refresh > 0)
+			self.animationTimeInterval = refresh;
 	}
 }
 
@@ -219,8 +254,17 @@
 	// enabled but never marked dirty.
 	bool draw = [self shouldDraw];
 
+	// Redraw when the answer CHANGES as well as while it stays yes. Marking the
+	// view dirty only in the drawing case leaves the last rendered frame frozen
+	// on a display that has just stopped qualifying: HillsOpenGLView's drawRect:
+	// is what clears to black when mRender is false, and it never ran. That is
+	// reachable exactly in the case the comment above claims to handle -- the
+	// main display changing while the saver runs.
+	BOOL changed = (draw != mWasDrawing);
+	mWasDrawing = draw;
+
 	[glView setRender:draw];
-	if (draw)
+	if (draw || changed)
 		[glView setNeedsDisplay:YES];
 }
 

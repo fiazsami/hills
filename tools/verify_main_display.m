@@ -103,6 +103,29 @@ int main(int argc, const char **argv)
 			return 2;
 		}
 
+		// Seed the preference this tool asserts about, and restore it after.
+		//
+		// shouldDraw is `!mMainDisplayOnly || isOnMainDisplay`, and the view
+		// loads mMainDisplayOnly from saved defaults. Without seeding, a machine
+		// where the user has switched "main display only" OFF -- persistence
+		// that hills#7 makes work -- makes the secondary-display assertion below
+		// fail against perfectly correct code. Review of this branch caught it.
+		//
+		// This process is not sandboxed, so it writes ~/Library/Preferences,
+		// which is a different domain from the appex container the saver itself
+		// uses. It cannot disturb the installed saver's settings.
+		//
+		// The restore at the end removes the key rather than the file, so on a
+		// machine that had no saved settings this leaves an empty plist behind.
+		// It is an empty dictionary, it shadows nothing, and the saver does not
+		// read that path -- but it is a file this tool created, so it is called
+		// out here rather than left as a surprise.
+		ScreenSaverDefaults *prefs =
+			[ScreenSaverDefaults defaultsForModuleWithName:bundle.bundleIdentifier];
+		id savedMainDisplay = [prefs objectForKey:@"MainDisplay"];
+		[prefs setBool:YES forKey:@"MainDisplay"];
+		[prefs synchronize];
+
 		int failures = 0;
 
 		for (NSScreen *screen in NSScreen.screens)
@@ -132,27 +155,32 @@ int main(int argc, const char **argv)
 			}
 			[window.contentView addSubview:view];
 
-			BOOL atOrigin = NSEqualPoints(window.frame.origin, NSZeroPoint);
+			// The oracle is the display we deliberately put the window on,
+			// compared against CGMainDisplayID(). NOT the window origin: that
+			// was character-for-character the body of isOnMainDisplay, so the
+			// assertion restated the implementation and could not fail. Review
+			// of this branch caught that too.
+			BOOL expected = (displayNumber(screen) == CGMainDisplayID());
 
-			NSLog(@"display %u  screenOrigin=%@  windowOrigin=%@  atOrigin=%@  isOnMainDisplay=%@  shouldDraw=%@",
+			NSLog(@"display %u  screenOrigin=%@  windowOrigin=%@  expectMain=%@  isOnMainDisplay=%@  shouldDraw=%@",
 				  displayNumber(screen),
 				  NSStringFromPoint(screen.frame.origin),
 				  NSStringFromPoint(window.frame.origin),
-				  atOrigin ? @"YES" : @"no ",
+				  expected ? @"YES" : @"no ",
 				  [view isOnMainDisplay] ? @"YES" : @"no ",
 				  [view shouldDraw] ? @"YES" : @"no ");
 
-			if ([view isOnMainDisplay] != atOrigin)
+			if ([view isOnMainDisplay] != expected)
 			{
-				NSLog(@"  FAIL: isOnMainDisplay disagrees with the window origin");
+				NSLog(@"  FAIL: isOnMainDisplay disagrees with CGMainDisplayID");
 				failures++;
 			}
-			if (atOrigin && ![view shouldDraw])
+			if (expected && ![view shouldDraw])
 			{
 				NSLog(@"  FAIL: refuses to draw on the main display -- ss-hx9");
 				failures++;
 			}
-			if (!atOrigin && [view shouldDraw])
+			if (!expected && [view shouldDraw])
 			{
 				NSLog(@"  FAIL: draws on a secondary display with the preference on -- ss-0d8");
 				failures++;
@@ -233,6 +261,12 @@ int main(int argc, const char **argv)
 				failures++;
 			}
 		}
+
+		if (savedMainDisplay != nil)
+			[prefs setObject:savedMainDisplay forKey:@"MainDisplay"];
+		else
+			[prefs removeObjectForKey:@"MainDisplay"];
+		[prefs synchronize];
 
 		NSLog(@"%@", failures ? @"=== FAILURES ===" : @"=== all checks passed ===");
 		return failures ? 1 : 0;

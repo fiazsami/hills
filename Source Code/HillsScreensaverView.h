@@ -25,6 +25,7 @@
 	bool mFSAA;
 	bool mWireFrame;
 	bool mMainDisplayOnly;
+	BOOL mWasDrawing;
 
 	IBOutlet id mConfigureSheet;
 	IBOutlet id mFSAAButton;

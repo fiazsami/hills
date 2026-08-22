@@ -104,6 +104,15 @@
 - (void) reshape
 {
 	[super reshape];
+
+	// Make the context current before touching GL. -[Scene setViewportRect:]
+	// calls glViewport immediately rather than storing the rect, so it acts on
+	// whatever context happens to be current. reshape can run before this view
+	// has a context -- the host builds the view and sizes it afterwards -- and
+	// the update would then be issued against another context or none at all,
+	// silently leaving the stale viewport. Raised by review; the twins avoid it
+	// by computing the viewport in setFrameSize: themselves.
+	[[self openGLContext] makeCurrentContext];
 	if ([self respondsToSelector:@selector(convertRectToBacking:)] && self.wantsBestResolutionOpenGLSurface)	// on Lion & later, if best resolution is on, then we need to convert our rect for glViewport()
 		[scene setViewportRect:[self convertRectToBacking:self.bounds]];
 	else
