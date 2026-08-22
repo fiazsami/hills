@@ -15,12 +15,31 @@ git switch master && git pull --ff-only
 git switch -c <type>/<topic>
 # ... change, run the tests ...
 git push -u origin <type>/<topic>
-gh pr create -R fiazsami/hills --base master
+gh pr create -R fiazsami/hills --base master --draft   # a draft, always
 ```
 
 Pass `-R fiazsami/hills` explicitly. This repo is a fork, and `gh` resolves the
 base repository to the **parent** in a fork clone — without it you can open a
 pull request on the upstream project by accident.
+
+**Open every PR as a draft, and stop at `gh pr ready -R fiazsami/hills`.** An open PR says nothing
+about whether it has been reviewed, so "still being reviewed" and "ready to
+merge" look identical to whoever is watching. Draft makes the difference visible
+where the merge decision is made, and GitHub refuses to merge a draft. Run
+`gh pr ready -R fiazsami/hills` only once review is clean; merging is a separate decision taken
+after that, never in the same motion.
+
+Review here is not a GitHub app — none has ever posted on this repository. It is
+an agent running `/code-review` against the diff, which is why draft state
+cannot deadlock it: there is no trigger to skip. CI is unaffected too; the
+`tests` workflow uses bare `on: pull_request`, which fires for drafts.
+
+Unlike `helios` and `hyperspace`, this repository has **no twin**: it shares no
+code with them. Its testable surface is Objective-C — `coverage/hills.json` in
+the superproject scopes `Source Code/Camera.m` and nothing else — so a change
+here is one PR in this repo plus the superproject pointer bump, never a paired
+pair. If you find yourself about to open a matching PR in another submodule,
+you are following the wrong instruction.
 
 Never commit from a detached HEAD. The superproject checks this repo out
 detached when it records a submodule pointer, and a commit made in that state
