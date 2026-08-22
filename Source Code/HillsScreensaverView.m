@@ -99,38 +99,43 @@
 // objects describing the same display -- so == is the wrong comparison even
 // when the display is right.
 //
-// Comparing NSScreenNumber against CGMainDisplayID() asks the question the
-// preference actually means: is this the display with the menu bar.
+// So the question has to be asked of the window's position instead, and the
+// main display is the one at the origin of the global coordinate space.
 //
-// BUT READ THE NEXT PARAGRAPH BEFORE TRUSTING THIS FUNCTION. Instrumented in a
-// live legacyScreenSaver.appex run on a two-display Mac, 32 samples:
+// THREE APIS WERE TRIED. Only the third distinguishes the displays, and the
+// numbers below are from an instrumented legacyScreenSaver.appex run on a
+// two-display Mac with the saver on both:
 //
-//	[[self window] screen] == nil        25
-//	the main display                      7
-//	the secondary display                 0
+//	-[NSScreen mainScreen]      the screen with the key window, not the main
+//	                            display. Followed focus; inverted the result.
 //
-// The comparison below is correct when it is reachable, and it is reachable
-// about a fifth of the time. The secondary display was never once identified --
-// which is the only case where this function would suppress drawing at all. So
-// the early return is not an edge case, it is the usual answer, and "main
-// display only" is a preference this host cannot honour. That is ss-0d8, and it
-// is a product decision rather than something to fix here.
+//	-[NSWindow screen]          nil for EVERY window on the secondary display,
+//	                            and nil 25 times out of 32 overall. Comparing
+//	                            its NSScreenNumber to CGMainDisplayID() is right
+//	                            when it answers, and it usually does not.
+//
+//	-[NSWindow frame].origin    (0,0) on the main display, (0,-1440) on the
+//	                            secondary. 83 samples, no exceptions.
+//
+// Note the sign. NSScreen reports the secondary display at y=+1440 while the
+// saver's window for it is at y=-1440, so the two disagree about more than
+// pointer identity -- intersecting a window frame with NSScreen frames finds
+// nothing at all, which is why -[NSWindow screen] is nil there. The one thing
+// both spaces agree on is the origin, and that is what this tests.
+//
+// It holds for side-by-side arrangements too: any display that is not the main
+// one sits at a non-zero offset, in x or in y.
 - (BOOL)isOnMainDisplay
 {
-	NSScreen *screen = [[self window] screen];
+	NSWindow *window = [self window];
 
-	// Not in a window yet, or in one that will not say which screen it is on.
-	// Draw: a saver that renders on one display too many is a smaller failure
-	// than one that renders nowhere.
-	//
-	// This was written as a safety net for the moment before the host places
-	// the view. Measurement then showed it is the main path -- see above -- so
-	// it is doing most of the work that keeps hills on screen at all.
-	if (screen == nil)
+	// Not in a window yet. The host builds the view before placing it, so this
+	// is reached every run, and a saver on one display too many is a smaller
+	// failure than a saver on none.
+	if (window == nil)
 		return YES;
 
-	NSNumber *displayID = [screen deviceDescription][@"NSScreenNumber"];
-	return displayID != nil && [displayID unsignedIntValue] == CGMainDisplayID();
+	return NSEqualPoints([window frame].origin, NSZeroPoint);
 }
 
 - (BOOL)shouldDraw

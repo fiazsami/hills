@@ -37,14 +37,29 @@
 // window server. So this is a local check, run by a person, and the honest
 // place to say so is here rather than in a CI file that cannot run it.
 //
-// WHAT ss-hx9 WAS. -[NSScreen mainScreen] is not the main display; it is the
-// screen holding the key window. Hills compared it by pointer against its own
-// window's screen. Measured on a two-display Mac while fixing this:
+// WHAT IT CHECKS. That the saver draws on the display at the origin of the
+// global coordinate space and not on the others, that a preview draws wherever
+// it is put, that a view with no window yet draws, and that the GL view follows
+// a resize. Those are ss-hx9 and ss-2ty.
 //
-//	display 1 (IS main)   shipped code said DO NOT DRAW   <- black saver
-//	display 2 (not main)  shipped code said DRAW          <- exactly backwards
+// WHAT IT CANNOT CHECK, AND THIS MATTERS. It cannot tell the current
+// implementation apart from the one it replaced. Kill-checked and the mutant
+// SURVIVED: swapping -[NSWindow frame].origin back for the old
+// -[NSWindow screen] / CGMainDisplayID() comparison passes every assertion
+// here.
 //
-// So the preference did not merely fail, it inverted.
+// That is not a gap in the assertions. In an ordinary process -- this one --
+// -[NSWindow screen] is populated and the old comparison is perfectly correct.
+// It is nil only inside legacyScreenSaver.appex, and only there does the old
+// code fall through to "cannot tell, so draw" and render on every display with
+// the preference switched on. That was ss-0d8.
+//
+// So the evidence for ss-0d8 being fixed is NOT this file. It is instrumented
+// measurement inside a live appex run -- 83 samples, window origin (0,0) on the
+// main display and (0,-1440) on the secondary, no exceptions -- plus a human
+// confirming the saver stopped appearing on the second display. Anyone changing
+// isOnMainDisplay should expect this harness to keep passing and should not read
+// that as safety.
 
 #import <Cocoa/Cocoa.h>
 #import <ScreenSaver/ScreenSaver.h>
@@ -92,21 +107,21 @@ int main(int argc, const char **argv)
 
 		for (NSScreen *screen in NSScreen.screens)
 		{
-			// contentRect is in the given screen's own coordinates, so pass a
-			// local origin -- and then assert against where the window ACTUALLY
-			// landed, not where we meant to put it. Getting this wrong once
-			// made the tool report a failure that was its own.
+			// Position the window at the screen's OWN origin. The check under
+			// test asks whether the window sits at the origin of the global
+			// coordinate space, so a test window parked at an arbitrary offset
+			// would report "not the main display" for every screen and assert
+			// nothing. An earlier version of this file did exactly that.
 			NSWindow *window = [[NSWindow alloc]
-				initWithContentRect:NSMakeRect(10, 10, 400, 300)
+				initWithContentRect:NSMakeRect(0, 0, 400, 300)
 						  styleMask:NSWindowStyleMaskBorderless
 							backing:NSBackingStoreBuffered
 							  defer:NO
 							 screen:screen];
+			[window setFrameOrigin:screen.frame.origin];
 
-			// isPreview:NO -- the preview is exempt from the preference by
-			// design, so testing the display logic through a preview instance
-			// would assert nothing. The preview rule is checked separately
-			// below.
+			// isPreview:NO -- previews are exempt by design, so testing the
+			// display logic through one would assert nothing.
 			ScreenSaverView *view = [[viewClass alloc]
 				initWithFrame:NSMakeRect(0, 0, 400, 300) isPreview:NO];
 			if (view == nil)
@@ -117,35 +132,31 @@ int main(int argc, const char **argv)
 			}
 			[window.contentView addSubview:view];
 
-			NSScreen *landed = view.window.screen;
-			if (landed == nil)
-			{
-				NSLog(@"SKIP: the window reported no screen");
-				continue;
-			}
+			BOOL atOrigin = NSEqualPoints(window.frame.origin, NSZeroPoint);
 
-			unsigned number = displayNumber(landed);
-			BOOL isMain = (number == CGMainDisplayID());
-			BOOL shipped = (landed == NSScreen.mainScreen);	// the ss-hx9 comparison
-
-			NSLog(@"display %u (%@main)  shipped-would-draw=%@  isOnMainDisplay=%@  shouldDraw=%@",
-				  number, isMain ? @"IS " : @"not ",
-				  shipped ? @"YES" : @"no ",
+			NSLog(@"display %u  screenOrigin=%@  windowOrigin=%@  atOrigin=%@  isOnMainDisplay=%@  shouldDraw=%@",
+				  displayNumber(screen),
+				  NSStringFromPoint(screen.frame.origin),
+				  NSStringFromPoint(window.frame.origin),
+				  atOrigin ? @"YES" : @"no ",
 				  [view isOnMainDisplay] ? @"YES" : @"no ",
 				  [view shouldDraw] ? @"YES" : @"no ");
 
-			if ([view isOnMainDisplay] != isMain)
+			if ([view isOnMainDisplay] != atOrigin)
 			{
-				NSLog(@"  FAIL: isOnMainDisplay disagrees with CGMainDisplayID");
+				NSLog(@"  FAIL: isOnMainDisplay disagrees with the window origin");
 				failures++;
 			}
-			if (isMain && ![view shouldDraw])
+			if (atOrigin && ![view shouldDraw])
 			{
-				NSLog(@"  FAIL: refuses to draw on the main display -- this is ss-hx9");
+				NSLog(@"  FAIL: refuses to draw on the main display -- ss-hx9");
 				failures++;
 			}
-			if (isMain && !shipped)
-				NSLog(@"  (the shipped comparison would have gone black here)");
+			if (!atOrigin && [view shouldDraw])
+			{
+				NSLog(@"  FAIL: draws on a secondary display with the preference on -- ss-0d8");
+				failures++;
+			}
 		}
 
 		// A preview must draw wherever it is put. This is the case the user
