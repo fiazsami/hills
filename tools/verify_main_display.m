@@ -194,6 +194,35 @@ int main(int argc, const char **argv)
 			failures++;
 		}
 
+		// The GL view must follow a resize.
+		//
+		// The host builds the view small and then sizes it to the display, so
+		// a GL view that does not follow leaves a correct little picture in the
+		// corner of a large black screen. That is what a hot corner showed:
+		// blank. autoresizesSubviews is deliberately NO, so the forwarding in
+		// -setFrameSize: is the only thing holding this up.
+		ScreenSaverView *resized = [[viewClass alloc]
+			initWithFrame:NSMakeRect(0, 0, 400, 300) isPreview:NO];
+		NSView *glView = resized.subviews.firstObject;
+		if (glView == nil)
+		{
+			NSLog(@"FAIL: no GL subview to resize");
+			failures++;
+		}
+		else
+		{
+			NSSize target = NSMakeSize(3440, 1440);
+			[resized setFrameSize:target];
+			NSLog(@"resize 400x300 -> %.0fx%.0f:  glView is now %.0fx%.0f",
+				  target.width, target.height,
+				  glView.frame.size.width, glView.frame.size.height);
+			if (!NSEqualSizes(glView.frame.size, target))
+			{
+				NSLog(@"  FAIL: the GL view did not follow the resize");
+				failures++;
+			}
+		}
+
 		NSLog(@"%@", failures ? @"=== FAILURES ===" : @"=== all checks passed ===");
 		return failures ? 1 : 0;
 	}

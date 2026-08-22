@@ -146,6 +146,27 @@
 	[super startAnimation];
 }
 
+- (void)setFrameSize:(NSSize)newSize
+{
+	[super setFrameSize:newSize];
+
+	// Follow the host's resize. It builds this view and then sizes it -- the
+	// full-screen path sets it to the whole display after init -- and
+	// autoresizesSubviews is NO, set in the initialiser above. Nothing else
+	// ever moved glView, so it kept the size it was constructed with and drew
+	// a small correct picture into the corner of a large black screen.
+	//
+	// helios and hyperspace both forward the size; hills was the only one of
+	// the three that did not, which is why only hills was blank.
+	//
+	// No viewport arithmetic is needed here. -[NSOpenGLView setFrameSize:]
+	// leads to -reshape, and HillsOpenGLView's reshape already sets the scene's
+	// viewport from its own bounds, converting to the backing store when
+	// wantsBestResolutionOpenGLSurface is on. The twins do that conversion in
+	// this method only because their GL views do not.
+	[glView setFrameSize:newSize];
+}
+
 - (void)stopAnimation
 {
     [super stopAnimation];
