@@ -101,14 +101,31 @@
 //
 // Comparing NSScreenNumber against CGMainDisplayID() asks the question the
 // preference actually means: is this the display with the menu bar.
+//
+// BUT READ THE NEXT PARAGRAPH BEFORE TRUSTING THIS FUNCTION. Instrumented in a
+// live legacyScreenSaver.appex run on a two-display Mac, 32 samples:
+//
+//	[[self window] screen] == nil        25
+//	the main display                      7
+//	the secondary display                 0
+//
+// The comparison below is correct when it is reachable, and it is reachable
+// about a fifth of the time. The secondary display was never once identified --
+// which is the only case where this function would suppress drawing at all. So
+// the early return is not an edge case, it is the usual answer, and "main
+// display only" is a preference this host cannot honour. That is ss-0d8, and it
+// is a product decision rather than something to fix here.
 - (BOOL)isOnMainDisplay
 {
 	NSScreen *screen = [[self window] screen];
 
-	// Not in a window yet, so the question cannot be answered. Draw: a saver
-	// that renders on one display too many is a smaller failure than one that
-	// renders nowhere, and this is reached every time the host builds the view
-	// before placing it.
+	// Not in a window yet, or in one that will not say which screen it is on.
+	// Draw: a saver that renders on one display too many is a smaller failure
+	// than one that renders nowhere.
+	//
+	// This was written as a safety net for the moment before the host places
+	// the view. Measurement then showed it is the main path -- see above -- so
+	// it is doing most of the work that keeps hills on screen at all.
 	if (screen == nil)
 		return YES;
 
