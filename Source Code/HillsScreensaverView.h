@@ -25,6 +25,7 @@
 	bool mFSAA;
 	bool mWireFrame;
 	bool mMainDisplayOnly;
+	BOOL mWasDrawing;
 
 	IBOutlet id mConfigureSheet;
 	IBOutlet id mFSAAButton;
@@ -45,6 +46,8 @@
 	IBOutlet id mGridSizeTextField;
 }
 
+- (BOOL) isOnMainDisplay;
+- (BOOL) shouldDraw;
 - (BOOL) hasConfigureSheet;
 - (NSWindow*) configureSheet;
 - (IBAction)closeSheet:(id)sender;
