@@ -384,6 +384,29 @@
 // hyperspace does not have this bug, and the difference is only distance:
 // HyperspaceView.mm sets its keys and calls synchronize on the next line.
 // Its preference file exists and is current.
+//
+// The flush goes through -flushDefaults: rather than being called directly,
+// because every sliderCell in ConfigureSheet.xib is continuous="YES" and
+// NSColorWell is continuous by default. Their actions fire once per
+// mouse-dragged event, so a synchronize in the action body would mean hundreds
+// of blocking round trips to cfprefsd during a single drag, on the main thread.
+// Intermediate drag events are therefore skipped and the flush happens when the
+// gesture ends. Raised by review of this branch.
+// Flush unless we are in the middle of a drag.
+//
+// Skipping only NSEventTypeLeftMouseDragged rather than testing for mouse-up
+// means anything that is not a drag still flushes immediately -- a click, a
+// keyboard adjustment, a programmatic change -- so no path loses its write. The
+// last event of a drag is the mouse-up, which is not a drag, so the final value
+// is always flushed.
+- (void)flushDefaults:(ScreenSaverDefaults *)defaults
+{
+	if ([NSApp currentEvent].type == NSEventTypeLeftMouseDragged)
+		return;
+
+	[defaults synchronize];
+}
+
 - (void) loadOptions
 {
 	NSString *identifier = [[NSBundle bundleForClass:[self class]] bundleIdentifier];
@@ -428,7 +451,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setBool:([sender state] == NSOnState) forKey:FSAA_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectWireFrameButton:(id)sender
@@ -437,7 +460,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setBool:([sender state] == NSOnState) forKey:WIRE_FRAME_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectMainDisplayButton:(id)sender
@@ -446,7 +469,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setBool:([sender state] == NSOnState) forKey:MAIN_DISPLAY_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectSpeedSlider:(id)sender
@@ -458,7 +481,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:speed forKey:SPEED_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectHillsHeightSlider:(id)sender
@@ -470,7 +493,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:hills_height forKey:HILLS_HEIGHT_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectFogDensitySlider:(id)sender
@@ -482,7 +505,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:fog_density forKey:FOG_DENSITY_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectCameraHeightSlider:(id)sender
@@ -494,7 +517,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:camera_height forKey:CAMERA_HEIGHT_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectLookAheadSlider:(id)sender
@@ -506,7 +529,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:look_ahead_distance forKey:LOOK_AHEAD_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectGridSizeSlider:(id)sender
@@ -518,7 +541,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setInteger:grid_size forKey:GRID_SIZE_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectFogColourButton:(id)sender
@@ -542,7 +565,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 
 	[defaults setObject:colarray forKey:FOG_COLOUR_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectDefaultSettings:(id)sender
@@ -556,14 +579,15 @@
 	[defaults setFloat:DEFAULT_CAMERA_HEIGHT forKey:CAMERA_HEIGHT_KEY];
 	[defaults setFloat:DEFAULT_HILLS_HEIGHT forKey:HILLS_HEIGHT_KEY];
 	[defaults setFloat:DEFAULT_SPEED forKey:SPEED_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	// No flush here: the one after the fog colour below covers these six keys
+	// too, and nothing reads defaults in between. Review caught the duplicate.
 
 	NSValue *red = [NSNumber numberWithFloat:1.0f]; 
 	NSValue *green = [NSNumber numberWithFloat:1.0f]; 
 	NSValue *blue = [NSNumber numberWithFloat:1.0f]; 
 	NSValue *alpha = [NSNumber numberWithFloat:1.0f]; 
 	[defaults setObject:[NSArray arrayWithObjects:red, green, blue, alpha, nil] forKey:FOG_COLOUR_KEY];
-	[defaults synchronize];	// see the comment on -loadOptions
+	[self flushDefaults:defaults];	// see the comment on -loadOptions
 	
 	[self updateControls];
 }
