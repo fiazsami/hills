@@ -364,6 +364,26 @@
     [NSApp endSheet:mConfigureSheet];
 }
 
+// Every -select…: action below writes its value and then flushes it immediately.
+// That is not belt-and-braces; without it nothing hills writes survives.
+//
+// Measured inside legacyScreenSaver.appex, one process, one ScreenSaverDefaults
+// instance, user unchecking "Main display only":
+//
+//	18:09:40.327  action fired, writing 0
+//	18:09:40.327  read back 0          <- the write landed
+//	18:09:41.195  read back 1          <- reverted, with none of our code running
+//	18:09:41.195  closeSheet: synchronize returned YES, value still 1
+//
+// The change was discarded before -closeSheet: got round to flushing it, and
+// -synchronize then reported success on an empty set of changes. No preference
+// file for this module existed anywhere on the system as a result, so every
+// setting in the sheet -- not just this one -- silently reverted to its
+// registered default the moment the sheet closed.
+//
+// hyperspace does not have this bug, and the difference is only distance:
+// HyperspaceView.mm sets its keys and calls synchronize on the next line.
+// Its preference file exists and is current.
 - (void) loadOptions
 {
 	NSString *identifier = [[NSBundle bundleForClass:[self class]] bundleIdentifier];
@@ -408,6 +428,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setBool:([sender state] == NSOnState) forKey:FSAA_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectWireFrameButton:(id)sender
@@ -416,6 +437,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setBool:([sender state] == NSOnState) forKey:WIRE_FRAME_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectMainDisplayButton:(id)sender
@@ -424,6 +446,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setBool:([sender state] == NSOnState) forKey:MAIN_DISPLAY_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectSpeedSlider:(id)sender
@@ -435,6 +458,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:speed forKey:SPEED_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectHillsHeightSlider:(id)sender
@@ -446,6 +470,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:hills_height forKey:HILLS_HEIGHT_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectFogDensitySlider:(id)sender
@@ -457,6 +482,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:fog_density forKey:FOG_DENSITY_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectCameraHeightSlider:(id)sender
@@ -468,6 +494,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:camera_height forKey:CAMERA_HEIGHT_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectLookAheadSlider:(id)sender
@@ -479,6 +506,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setFloat:look_ahead_distance forKey:LOOK_AHEAD_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectGridSizeSlider:(id)sender
@@ -490,6 +518,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 	
 	[defaults setInteger:grid_size forKey:GRID_SIZE_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectFogColourButton:(id)sender
@@ -513,6 +542,7 @@
 	ScreenSaverDefaults *defaults = [ScreenSaverDefaults defaultsForModuleWithName:identifier];
 
 	[defaults setObject:colarray forKey:FOG_COLOUR_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 }
 
 - (IBAction)selectDefaultSettings:(id)sender
@@ -526,12 +556,14 @@
 	[defaults setFloat:DEFAULT_CAMERA_HEIGHT forKey:CAMERA_HEIGHT_KEY];
 	[defaults setFloat:DEFAULT_HILLS_HEIGHT forKey:HILLS_HEIGHT_KEY];
 	[defaults setFloat:DEFAULT_SPEED forKey:SPEED_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 
 	NSValue *red = [NSNumber numberWithFloat:1.0f]; 
 	NSValue *green = [NSNumber numberWithFloat:1.0f]; 
 	NSValue *blue = [NSNumber numberWithFloat:1.0f]; 
 	NSValue *alpha = [NSNumber numberWithFloat:1.0f]; 
 	[defaults setObject:[NSArray arrayWithObjects:red, green, blue, alpha, nil] forKey:FOG_COLOUR_KEY];
+	[defaults synchronize];	// see the comment on -loadOptions
 	
 	[self updateControls];
 }
