@@ -183,7 +183,17 @@
 	// then sees draw=NO against mWasDrawing=NO, calls that no change, and skips
 	// setNeedsDisplay:. The frame stays frozen. Exactly what the transition
 	// test was added to prevent. Found by review.
-	mWasDrawing = [self shouldDraw];
+	// Deliberately NOT plain -shouldDraw. With no window yet -- which the
+	// measurement says is the usual case here -- -isOnMainDisplay answers YES
+	// because it cannot tell, and that fallback exists so a saver is never
+	// blank. It is the wrong default for THIS call site: -animateOneFrame
+	// re-asks about 17ms later, so the cost of guessing "no" is one black frame,
+	// while the cost of guessing "yes" is the scene rendering on a display that
+	// should be black -- the visible symptom of ss-0d8, once per start. Raised
+	// by review.
+	mWasDrawing = [self isPreview]
+		|| !mMainDisplayOnly
+		|| ([self window] != nil && [self isOnMainDisplay]);
 	[glView setRender:mWasDrawing];
 
 	// Repaint unconditionally. The render state is being re-declared here, and
@@ -410,8 +420,11 @@
 // NSColorWell is continuous by default. Their actions fire once per
 // mouse-dragged event, so a synchronize in the action body would mean hundreds
 // of blocking round trips to cfprefsd during a single drag, on the main thread.
-// Intermediate drag events are therefore skipped and the flush happens when the
-// gesture ends. Raised by review of this branch.
+// A flush is therefore always left pending and cancelled only when a real one
+// happens, so a gesture that never delivers a final non-drag action still gets
+// written. -flushDefaults: explains the run loop modes. Relying on that final
+// event was an earlier design here and is not safe; the paragraph describing it
+// survived the rewrite and said the opposite of the code for one commit.
 // Flush now, or leave a flush pending if a drag is in progress.
 //
 // Every write has to reach disk, because an unflushed one is discarded about a
