@@ -98,7 +98,12 @@ jobs:
           verify() {
             echo "verifying $1"
             codesign --verify --strict --verbose=4 "$1"
-            codesign -dv "$1" 2>&1 | grep -q "^Sealed Resources" || {
+            # Captured first rather than piped into grep -q. Under pipefail a
+            # grep that exits on its first match can SIGPIPE the still-writing
+            # codesign (141), which propagates as the pipeline's status and
+            # reports a signing regression on a perfectly good bundle.
+            seal=$(codesign -dv "$1" 2>&1 || true)
+            printf '%s\n' "$seal" | grep -q "^Sealed Resources" || {
               echo "::error::$1 has no sealed resources -- signing regressed to linker-signed"
               exit 1
             }
@@ -113,12 +118,16 @@ jobs:
             for configuration in Release Debug; do
               if ! xcodebuild -project Hills.xcodeproj -target "$target" \
                      -configuration "$configuration" build; then
-                failed="$failed\n  $target / $configuration"
+                failed="$failed $target / $configuration%0A"
               fi
             done
           done
           if [ -n "$failed" ]; then
-            echo "::error::build failed for:$(printf "$failed")"
+            # %0A rather than a real newline: GitHub parses only the first
+            # line of a ::error:: command, so embedded newlines hid every
+            # failure after the first -- defeating the reason this loops over
+            # all four combinations instead of stopping at the first.
+            echo "::error::build failed for:%0A$failed"
             exit 1
           fi
 

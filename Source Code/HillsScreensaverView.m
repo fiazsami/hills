@@ -174,7 +174,17 @@
 
 - (void)startAnimation
 {
-	[glView setRender:[self shouldDraw]];
+	// mWasDrawing has to track what glView was TOLD, not only what
+	// animateOneFrame last decided. Setting the render flag here without
+	// updating it left the transition test in animateOneFrame comparing
+	// against a value that never described glView's state: with no window yet
+	// shouldDraw returns YES -- "reached every run" -- so AppKit can render one
+	// frame, and the first animateOneFrame on a display that should be black
+	// then sees draw=NO against mWasDrawing=NO, calls that no change, and skips
+	// setNeedsDisplay:. The frame stays frozen. Exactly what the transition
+	// test was added to prevent. Found by review.
+	mWasDrawing = [self shouldDraw];
+	[glView setRender:mWasDrawing];
 
 	// Always start the timer, even when this display will not be drawn on.
 	// It used to be started only in the drawing case, which left start and
@@ -401,10 +411,42 @@
 // is always flushed.
 - (void)flushDefaults:(ScreenSaverDefaults *)defaults
 {
+	// Always leave a flush pending, then cancel it if we flush for real. A drag
+	// that never delivers a final non-drag action still gets written.
+	//
+	// The previous version simply skipped mid-drag and relied on the mouse-up
+	// arriving as an ordinary action. Review pointed out that is unverified for
+	// NSColorWell, whose action is driven by NSColorPanel in another window
+	// rather than by the well's own tracking loop -- so the fog colour could be
+	// written and never flushed, and this file's own measurement says an
+	// unflushed write is discarded before closeSheet: gets to it. It also noted
+	// that -[NSApplication currentEvent] is app-global state rather than "the
+	// event that caused this action", so any action arriving from a non-event
+	// source during a drag was skipped too.
+	//
+	// The deferred flush is scheduled in the default run loop mode, which a
+	// mouse-tracking loop does not run, so it fires once tracking ends rather
+	// than once per dragged event. That is the coalescing the drag test was for,
+	// without depending on which event happens to arrive last.
+	[NSObject cancelPreviousPerformRequestsWithTarget:self
+											 selector:@selector(flushPendingDefaults)
+											   object:nil];
+
 	if ([NSApp currentEvent].type == NSEventTypeLeftMouseDragged)
+	{
+		[self performSelector:@selector(flushPendingDefaults)
+				   withObject:nil
+				   afterDelay:0.0];
 		return;
+	}
 
 	[defaults synchronize];
+}
+
+- (void)flushPendingDefaults
+{
+	NSString *identifier = [[NSBundle bundleForClass:[self class]] bundleIdentifier];
+	[[ScreenSaverDefaults defaultsForModuleWithName:identifier] synchronize];
 }
 
 - (void) loadOptions
