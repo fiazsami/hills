@@ -186,6 +186,16 @@
 	mWasDrawing = [self shouldDraw];
 	[glView setRender:mWasDrawing];
 
+	// Repaint unconditionally. The render state is being re-declared here, and
+	// assigning mWasDrawing without repainting swallows any transition that
+	// happened while the saver was stopped: -closeSheet: stops and restarts
+	// around -loadOptions, so mMainDisplayOnly can flip in between, and the
+	// first -animateOneFrame would then see draw == mWasDrawing, call it no
+	// change, and leave the last rendered frame frozen instead of clearing.
+	// That is the failure the transition test exists to catch, moved from first
+	// start to restart. Review caught the one-sided invariant.
+	[glView setNeedsDisplay:YES];
+
 	// Always start the timer, even when this display will not be drawn on.
 	// It used to be started only in the drawing case, which left start and
 	// stop asymmetric -- stopAnimation calls super unconditionally -- and left
@@ -402,13 +412,15 @@
 // of blocking round trips to cfprefsd during a single drag, on the main thread.
 // Intermediate drag events are therefore skipped and the flush happens when the
 // gesture ends. Raised by review of this branch.
-// Flush unless we are in the middle of a drag.
+// Flush now, or leave a flush pending if a drag is in progress.
 //
-// Skipping only NSEventTypeLeftMouseDragged rather than testing for mouse-up
-// means anything that is not a drag still flushes immediately -- a click, a
-// keyboard adjustment, a programmatic change -- so no path loses its write. The
-// last event of a drag is the mouse-up, which is not a drag, so the final value
-// is always flushed.
+// Every write has to reach disk, because an unflushed one is discarded about a
+// second later -- measured, see the comment on -loadOptions. But the sliders and
+// the colour well are continuous controls, so flushing in the action body would
+// mean a blocking cfprefsd round trip per mouse-dragged event.
+//
+// So a deferred flush is always scheduled and cancelled only when a real flush
+// happens. The body says why that is scheduled the way it is.
 - (void)flushDefaults:(ScreenSaverDefaults *)defaults
 {
 	// Always leave a flush pending, then cancel it if we flush for real. A drag
@@ -429,24 +441,41 @@
 	// than once per dragged event. That is the coalescing the drag test was for,
 	// without depending on which event happens to arrive last.
 	[NSObject cancelPreviousPerformRequestsWithTarget:self
-											 selector:@selector(flushPendingDefaults)
-											   object:nil];
+											 selector:@selector(flushPendingDefaults:)
+											   object:defaults];
 
 	if ([NSApp currentEvent].type == NSEventTypeLeftMouseDragged)
 	{
-		[self performSelector:@selector(flushPendingDefaults)
-				   withObject:nil
-				   afterDelay:0.0];
+		// Both modes named explicitly. The default mode alone gives the
+		// coalescing -- a mouse-tracking loop runs NSEventTrackingRunLoopMode
+		// and so does not fire this until tracking ends -- but it also means
+		// nothing fires while the run loop sits in NSModalPanelRunLoopMode. The
+		// sheet's presentation belongs to legacyScreenSaver.appex, not to us, so
+		// a modal session there would strand every drag-written value until the
+		// sheet closed, by which time the write is gone. Adding the modal mode
+		// costs nothing: it is not a tracking mode, so the coalescing holds.
+		//
+		// NSRunLoopCommonModes would be wrong -- it INCLUDES event tracking, so
+		// the flush would fire once per dragged event, which is what this exists
+		// to avoid. Both points raised by review.
+		[self performSelector:@selector(flushPendingDefaults:)
+				   withObject:defaults
+				   afterDelay:0.0
+					  inModes:@[NSDefaultRunLoopMode, NSModalPanelRunLoopMode]];
 		return;
 	}
 
 	[defaults synchronize];
 }
 
-- (void)flushPendingDefaults
+// Takes the object the caller passed rather than re-deriving it. Every current
+// caller hands over the same shared instance, so this made no difference today
+// -- but the immediate and deferred paths were flushing different expressions,
+// which would flush a differently-named module on a click and silently not
+// flush it on a drag. Review caught the asymmetry before it could matter.
+- (void)flushPendingDefaults:(ScreenSaverDefaults *)defaults
 {
-	NSString *identifier = [[NSBundle bundleForClass:[self class]] bundleIdentifier];
-	[[ScreenSaverDefaults defaultsForModuleWithName:identifier] synchronize];
+	[defaults synchronize];
 }
 
 - (void) loadOptions
