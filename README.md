@@ -23,7 +23,7 @@ Most of Hills is drawing and host-integration code, which unit tests reach poorl
 
 | Defect | Effect | Fix |
 | --- | --- | --- |
-| Drew on whichever display had focus, not the main one | Hills rendered nothing at all | [`ebbf600`](https://github.com/fiazsami/hills/commit/ebbf600), [`0b31a1d`](https://github.com/fiazsami/hills/commit/0b31a1d) |
+| Chose its display by keyboard focus, not the main display | On a two-display Mac it drew on the secondary display and refused the main one | [`ebbf600`](https://github.com/fiazsami/hills/commit/ebbf600), [`0b31a1d`](https://github.com/fiazsami/hills/commit/0b31a1d) |
 | Ignored the host's resize | The full-screen saver was blank | [`5cb4c9e`](https://github.com/fiazsami/hills/commit/5cb4c9e) |
 | Preference writes not flushed | Settings did not survive | [`72f0ca9`](https://github.com/fiazsami/hills/commit/72f0ca9) |
 
@@ -31,7 +31,7 @@ Most of Hills is drawing and host-integration code, which unit tests reach poorl
 
 You need macOS 26 and Xcode, or the Xcode command-line tools for the tests alone.
 
-- **Tests:** compile the sources under `tests` with clang, link with `-framework Foundation -framework OpenGL`, and run the binary. The exact steps are in [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+- **Tests:** compile `Source Code/Camera.m` and the sources under `tests` with clang, with `-I"Source Code" -Itests`. Link with `-framework Foundation -framework OpenGL` and run the binary. The exact steps are in [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
 - **Screen saver and app:**
 
   ```sh
