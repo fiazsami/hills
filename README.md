@@ -8,7 +8,7 @@ Hills is Chris Kent's OpenGL screen saver: a camera flies over a generated lands
 
 ## What changed in this fork
 
-The work was done between 21 and 23 August 2026: 28 commits, +1,305 / −166 lines, all through 9 reviewed pull requests.
+The work was done between 21 and 23 August 2026: 28 commits, +1,305 / −166 lines, all through 9 pull requests.
 
 | Area | Result |
 | --- | --- |
@@ -42,7 +42,7 @@ You need macOS 26 and Xcode, or the Xcode command-line tools for the tests alone
 
 ## How the work was done
 
-The fixes, tests and reviews were written by coding agents (Claude Code) running inside a harness, under the direction of [Fiaz Sami](https://github.com/fiazsami). The harness provides guard hooks, a coverage ratchet and an independent verifier. Every change went through a draft pull request, an automated code review and CI before merge. The harness and dated write-ups of what went wrong are in [fiazsami/screen-savers](https://github.com/fiazsami/screen-savers).
+The fixes, tests and reviews were written by coding agents (Claude Code) running inside a harness, under the direction of [Fiaz Sami](https://github.com/fiazsami). The harness provides guard hooks, a coverage ratchet and an independent verifier. Every change reached `master` through a pull request with CI; review findings, and the fixes they prompted, are recorded in pull request comments and commit messages. The harness and dated write-ups of what went wrong are in [fiazsami/screen-savers](https://github.com/fiazsami/screen-savers).
 
 ## Credits and licence
 
