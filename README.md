@@ -43,7 +43,7 @@ You need macOS 26 and Xcode, or the Xcode command-line tools for the tests alone
 
 The fixes, tests and reviews were written by coding agents (Claude Code) running inside a harness, under the direction of [Fiaz Sami](https://github.com/fiazsami). The harness provides guard hooks, a coverage ratchet and a separate verifier agent. Every change reached `master` through a pull request, with CI from the second one onward; review findings, and the fixes they prompted, are recorded in pull request comments and commit messages. The harness and dated write-ups of what went wrong are in [fiazsami/screen-savers](https://github.com/fiazsami/screen-savers).
 
-## Credits and licence
+## Credits and license
 
 - Hills © 2006 Chris Kent.
 - Upstream repository maintained by Nick Zitzmann ([nickzman/hills](https://github.com/nickzman/hills)).
